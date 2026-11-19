@@ -9,6 +9,7 @@
 | `hand_gui` | Manual control panel: a slider per finger, gestures, speed/force, live feedback. Works through ROS 2, or straight to the hand over serial (no ROS, works on Windows), or against a simulator. Add `--rokoko` to drive it from a Rokoko Smartglove. |
 | `rokoko_teleop` | Follows a Rokoko Smartglove (Rokoko Studio's live stream) and publishes `cmd_angle`. See [section 7](#7-rokoko-smartglove-teleoperation). |
 | `t1_arm_follow` | Lindy's (the T1's) arms follow a Rokoko Smartsuit live, while Booster's controller keeps balance. No ROS needed. See [section 8](#8-lindys-arms-follow-the-rokoko-suit). |
+| `lindy_viewer` | A virtual Lindy (Booster's T1 model in MuJoCo) whose arms follow your suit, so you can check the mapping on any PC before using the robot. |
 
 The protocol code (`rh56.py`) follows the RH56 manual V1.0.9 and is tested against the manual's worked examples byte for byte (`test/test_rh56.py`).
 
@@ -210,6 +211,19 @@ The first time, it asks for the calibration pose: face your forward direction, h
 
 If it says `stream is missing bones: ...`, Rokoko names the bones differently from what the script expects. Send me the list it prints.
 
+**2b. Virtual Lindy (recommended before the real robot).** Same as the dry run, but you *see* a 3D Lindy copying you. It runs on any PC; no NVIDIA GPU is needed.
+
+```bash
+pip install mujoco
+```
+```bash
+python -m inspire_hand_ros2.lindy_viewer
+```
+
+Use `--demo` to watch built-in moves without the suit (punches, guard, arms out, wave, arms up). `--demo --snapshot lindy.png --seconds 8` saves a picture instead of opening a window. The first run downloads Booster's T1 model (BSD-3, pinned to one commit) into `~/.cache/lindy_viewer`.
+
+The viewer runs the *same* controller as the robot, with the same fade-in, speed limit and joint limits, so what you see is what Lindy's arms will do. Only the arms move. It's a pose viewer, not a physics simulation: nothing can fall over here, so it can't tell you anything about balance. The real robot (step 3) answers that.
+
 **3. On Lindy.** Lindy goes on the gantry, standing (Prepare mode, from the app or the remote), with nobody within arm's reach.
 
 ```bash
@@ -245,6 +259,7 @@ Options: `--net` (SDK network interface, default `127.0.0.1` on Lindy), `--port`
 - Glove teleop is tested with synthetic Rokoko Studio frames (same JSON layout and reference T-pose as Rokoko's own Blender plugin), not yet with a live glove. Thumb rotation is the roughest mapping. Calibrate before relying on it.
 - One hand per serial port. For two hands, use two adapters (and give each its own namespace and `joint_prefix`).
 - The Booster bridge is written from Booster's SDK headers (`b1_loco_api.hpp`) and their ROS 2 RPC example. It hasn't been run against a T1.
+- The arm math is checked against Booster's own MuJoCo model of the T1 (`T1_23dof.xml`): 200 random arm poses agree within 0.005 (about 0.3°), and rendered poses (punches, guard, wave, arms up) look right from the front and the side.
 - Arm follow (section 8) is tested against synthetic suit frames (both left- and right-handed world axes, leaning and turning), 400 random poses through the arm math, a fake robot, and a stand-in for Booster's Python SDK with the 1.6.3 names. It **hasn't moved a real T1 yet**, and these points are open:
   - Whether `UpperBodyCustomControl` also works in Walking mode.
   - What `MotorCmd.weight` really does on the T1. Booster's examples disagree: one ramps it to 0.5, another uses 1.0, and their `ArmController` leaves it at 0.
