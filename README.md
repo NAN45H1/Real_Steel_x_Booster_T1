@@ -8,6 +8,7 @@
 | `booster_bridge` | Same command topics, forwarded to the T1's own hand control (`/booster_rpc_service`). Use it only if the hand is plugged into the robot's hand port. |
 | `hand_gui` | Manual control panel: a slider per finger, gestures, speed/force, live feedback. Works through ROS 2, or straight to the hand over serial (no ROS, works on Windows), or against a simulator. Add `--rokoko` to drive it from a Rokoko Smartglove. |
 | `rokoko_teleop` | Follows a Rokoko Smartglove (Rokoko Studio's live stream) and publishes `cmd_angle`. See [section 7](#7-rokoko-smartglove-teleoperation). |
+| `t1_arm_follow` | Lindy's (the T1's) arms follow a Rokoko Smartsuit live, while Booster's controller keeps balance. No ROS needed. See [section 8](#8-lindys-arms-follow-the-rokoko-suit). |
 
 The protocol code (`rh56.py`) follows the RH56 manual V1.0.9 and is tested against the manual's worked examples byte for byte (`test/test_rh56.py`).
 
@@ -174,10 +175,79 @@ If the robot doesn't follow, check the status line or the node log:
 - `stream has no left glove`: wrong glove side or actor.
 - `not calibrated yet`: it works, but uses rough default ranges until you calibrate.
 
-## 8. Limits and what's not verified
+## 8. Lindy's arms follow the Rokoko suit
+
+Your arms drive Lindy's arms live. Head, waist and legs stay with Booster's own controller, so Lindy keeps its balance (and can walk with the remote) the whole time. This is the first step of whole-body teleoperation: arms copied, legs left to Booster.
+
+**How it works**
+- **Your side:** Rokoko Studio streams every bone's position. The script measures your upper arm (shoulder → elbow) and forearm (elbow → wrist) directions relative to your chest. Leaning or turning your whole body therefore doesn't swing Lindy's arms.
+- **Lindy's side:** it solves the 4 arm joints per arm (shoulder pitch, shoulder roll, upper-arm twist, elbow) so Lindy's arm points the same way. Your arm length and weight don't matter, because only directions are copied. The geometry and joint limits come from Booster's `T1_23dof.urdf`.
+- **Sending:** the same method as Booster's own Python `ArmController`. It calls `UpperBodyCustomControl(True)`, then sends joints 2–9 on `rt/joint_ctrl` at 100 Hz (kp 60, kd 3) with zero gains for everything else.
+
+**Safety built in**
+- Commands start from wherever the arms are now, with control faded in over 2 s.
+- Each joint moves at most `--max-speed` (default 1 rad/s) and stays 0.05 rad inside its limits.
+- If the suit stream stops, the arms hold still.
+- **Ctrl-C:** the arms go back to where they started, control fades out, and it's handed back to Booster. A second Ctrl-C hands it back immediately.
+- If Lindy tilts more than 0.6 rad, or its state stops arriving, control is handed back at once.
+
+**1. Rokoko Studio.** Use the same Custom stream as for the gloves (JSON, port 14043, Activate), with your suit actor live. Set Forward IP to the machine that runs the script.
+
+**2. Dry run on this PC first (no robot).** This prints Lindy's joint angles while you move:
+
+```bash
+cd G:\robothand\inspire_hand_ros2
+```
+```bash
+python -m inspire_hand_ros2.t1_arm_follow dry-run
+```
+
+The first time, it asks for the calibration pose: face your forward direction, hold **both arms straight out in front of you** at shoulder height, and press Enter. This is saved to `~/.rokoko_t1_arms_calibration.json`; use `--calibrate` to redo it. Check these:
+- **Arms hanging down:** L roll and R roll near ∓80–90°.
+- **Left arm raised forward:** L pitch goes negative, toward −90°.
+- **Elbow bent:** L elbow negative, R elbow positive.
+- **Raising only your left arm moves only the L numbers.** If the right numbers move instead, tell me.
+
+If it says `stream is missing bones: ...`, Rokoko names the bones differently from what the script expects. Send me the list it prints.
+
+**3. On Lindy.** Lindy goes on the gantry, standing (Prepare mode, from the app or the remote), with nobody within arm's reach.
+
+```bash
+pip install booster_robotics_sdk_python --user
+```
+```bash
+cd ~/ros2_ws/src/inspire_hand_ros2 && python3 -m inspire_hand_ros2.t1_arm_follow selftest
+```
+
+The self-test uses no suit. The left shoulder swings about 17° forward and back once, then control is handed back. If that works, arm control over the SDK works. Then follow the suit, slowly at first:
+
+```bash
+python3 -m inspire_hand_ros2.t1_arm_follow follow --max-speed 0.5
+```
+
+Raise `--max-speed` once it behaves. Copy `~/.rokoko_t1_arms_calibration.json` from the PC so you don't have to calibrate again on Lindy.
+
+**4. Hands at the same time.** Only one program can listen on port 14043, so the arm script forwards the stream to the glove teleop:
+
+```bash
+python3 -m inspire_hand_ros2.t1_arm_follow follow --relay 127.0.0.1:14044
+```
+
+Then run the glove teleop on port 14044: set `udp_port: 14044` in [config/left_hand.yaml](inspire_hand_ros2/config/left_hand.yaml), or use `hand_gui --rokoko --rokoko-port 14044`.
+
+**5. Then the real question.** Switch Lindy to Walking mode while the arms follow, still on the gantry. Does Booster keep balance while we move the arms? If yes, walking (from your hips) and the other "shadow" pieces can go on top.
+
+Options: `--net` (SDK network interface, default `127.0.0.1` on Lindy), `--port`, `--actor`, `--max-weight` (0..1, default 1), `--kp`, `--kd`, `--yes` (skip the safety prompt).
+
+## 9. Limits and what's not verified
 
 - Tested here: the protocol against the manual's example frames, the full stack against the built-in simulator, the GUI against the simulator, and the driver/bridge/teleop node logic against a stubbed `rclpy`. The GUI has connected to the real hand on Windows. **The ROS 2 nodes haven't run on real ROS 2 yet.** First real run: bench test (step 3), then `simulate:=true` on the T1, then the real hand.
 - Glove teleop is tested with synthetic Rokoko Studio frames (same JSON layout and reference T-pose as Rokoko's own Blender plugin), not yet with a live glove. Thumb rotation is the roughest mapping. Calibrate before relying on it.
 - One hand per serial port. For two hands, use two adapters (and give each its own namespace and `joint_prefix`).
 - The Booster bridge is written from Booster's SDK headers (`b1_loco_api.hpp`) and their ROS 2 RPC example. It hasn't been run against a T1.
+- Arm follow (section 8) is tested against synthetic suit frames (both left- and right-handed world axes, leaning and turning), 400 random poses through the arm math, a fake robot, and a stand-in for Booster's Python SDK with the 1.6.3 names. It **hasn't moved a real T1 yet**, and these points are open:
+  - Whether `UpperBodyCustomControl` also works in Walking mode.
+  - What `MotorCmd.weight` really does on the T1. Booster's examples disagree: one ramps it to 0.5, another uses 1.0, and their `ArmController` leaves it at 0.
+  - The bone names (`hip`, `neck`, `leftUpperArm`, `leftLowerArm`, `leftHand`, and the same on the right) are checked against the names inside Rokoko Studio 2.6.2 (`Studio.LivestreamFrames.dll`), not yet against a live suit stream.
+  - The 4-joint arm can't match every human pose. Reaches behind the back are clamped to the joint limits.
 - Force readings depend on the hand's force-sensor calibration. Recalibrate from the Inspire PC software with the hand unloaded if forces look off at rest.

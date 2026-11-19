@@ -25,6 +25,7 @@ setup(
             "booster_bridge = inspire_hand_ros2.booster_bridge_node:main",
             "hand_gui = inspire_hand_ros2.hand_gui:main",
             "rokoko_teleop = inspire_hand_ros2.rokoko_teleop_node:main",
+            "t1_arm_follow = inspire_hand_ros2.t1_arm_follow:main",
         ],
     },
 )

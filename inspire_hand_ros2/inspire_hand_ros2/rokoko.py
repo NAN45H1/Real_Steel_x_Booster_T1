@@ -197,22 +197,31 @@ class GloveMapper:
 # -- live input -----------------------------------------------------------------------------------
 
 class StudioReceiver:
-    def __init__(self, port=DEFAULT_PORT, host=""):
+    def __init__(self, port=DEFAULT_PORT, host="", relay=None):
+        """relay: optional (host, port) every packet is forwarded to, so a second program can read
+        the same Rokoko stream (only one program can listen on a UDP port)."""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((host, port))
         self.sock.setblocking(False)
         self.port = self.sock.getsockname()[1]
+        self.relay = relay
 
     def poll(self):
         """Newest frame since the last call (older ones are dropped so we never lag), or None."""
         latest = None
         while True:
             try:
-                latest, _ = self.sock.recvfrom(1 << 17)
+                packet, _ = self.sock.recvfrom(1 << 17)
             except (BlockingIOError, InterruptedError):
                 break
             except ConnectionResetError:  # Windows reports stray ICMP errors on UDP sockets
                 continue
+            latest = packet
+            if self.relay:
+                try:
+                    self.sock.sendto(packet, self.relay)
+                except OSError:
+                    pass  # nobody listening there yet; keep going
         return None if latest is None else decode(latest)
 
     def close(self):
