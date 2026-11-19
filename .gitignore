@@ -4,3 +4,6 @@ __pycache__/
 build/
 install/
 log/
+# training: Booster repos, venvs and Isaac Lab logs (see training/README.md)
+external/
+training/logs/

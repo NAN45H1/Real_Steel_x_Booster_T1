@@ -10,6 +10,7 @@
 | `rokoko_teleop` | Follows a Rokoko Smartglove (Rokoko Studio's live stream) and publishes `cmd_angle`. See [section 7](#7-rokoko-smartglove-teleoperation). |
 | `t1_arm_follow` | Lindy's (the T1's) arms follow a Rokoko Smartsuit live, while Booster's controller keeps balance. No ROS needed. See [section 8](#8-lindys-arms-follow-the-rokoko-suit). |
 | `lindy_viewer` | A virtual Lindy (Booster's T1 model in MuJoCo) whose arms follow your suit, so you can check the mapping on any PC before using the robot. |
+| [`training/`](training/README.md) | Whole-body policies: train Lindy to copy a motion on an NVIDIA RTX PC (Booster's booster_train on Isaac Lab), then check the policy in MuJoCo on the laptop. See [section 10](#10-whole-body-policy-training). |
 
 The protocol code (`rh56.py`) follows the RH56 manual V1.0.9 and is tested against the manual's worked examples byte for byte (`test/test_rh56.py`).
 
@@ -266,3 +267,12 @@ Options: `--net` (SDK network interface, default `127.0.0.1` on Lindy), `--port`
   - The bone names (`hip`, `neck`, `leftUpperArm`, `leftLowerArm`, `leftHand`, and the same on the right) are checked against the names inside Rokoko Studio 2.6.2 (`Studio.LivestreamFrames.dll`), not yet against a live suit stream.
   - The 4-joint arm can't match every human pose. Reaches behind the back are clamped to the joint limits.
 - Force readings depend on the hand's force-sensor calibration. Recalibrate from the Inspire PC software with the hand unloaded if forces look off at rest.
+
+## 10. Whole-body policy training
+
+Booster's controller only lets us steer the arms while it balances. For whole-body moves (dances, punches with the legs, and later live shadowing) Lindy needs a trained policy. [training/README.md](training/README.md) has the full steps. In short:
+
+- **NVIDIA RTX PC, 16 GB+:** `python training/setup_env.py gpu`, then `lindy_train.py motion` / `train` / `export`. This trains BeyondMimic motion tracking with Booster's own T1 task.
+- **This laptop, CPU only:** `python training/setup_env.py sim`, then `lindy_sim2sim.py check` / `watch` runs a policy in MuJoCo. Booster's own trained T1 dance passes this check today.
+
+Running a trained policy on the real robot isn't written yet. It will go through Booster's booster_deploy, on the gantry first.
